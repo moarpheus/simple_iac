@@ -76,11 +76,3 @@ resource "aws_security_group" "allow_ssh" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
-
-##################################################################################
-# OUTPUT
-##################################################################################
-
-output "aws_instance_public_dns" {
-  value = aws_instance.nginx.public_dns
-}
