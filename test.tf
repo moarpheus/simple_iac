@@ -9,6 +9,12 @@ variable "key_name" {}
 variable "region" {
   default = "eu-west-2"
 }
+variable "network_address_space" {
+  default = "10.1.0.0/16"
+}
+variable "subnet1_address_space" {
+  default = "10.1.0.0/24"
+}
 
 ##################################################################################
 # PROVIDERS
@@ -23,6 +29,7 @@ provider "aws" {
 ##################################################################################
 # DATA
 ##################################################################################
+data "aws_availability_zones" "available" {}
 
 data "aws_ami" "aws-linux" {
   most_recent = true
