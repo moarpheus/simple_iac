@@ -78,6 +78,14 @@ resource "aws_subnet" "subnet1" {
 
 }
 
+resource "aws_subnet" "subnet2" {
+  cidr_block              = var.subnet2_address_space
+  vpc_id                  = aws_vpc.vpc.id
+  map_public_ip_on_launch = "true"
+  availability_zone       = data.aws_availability_zones.available.names[1]
+
+}
+
 # ROUTING #
 resource "aws_route_table" "rtb" {
   vpc_id = aws_vpc.vpc.id
@@ -92,6 +100,12 @@ resource "aws_route_table_association" "rta-subnet1" {
   subnet_id      = aws_subnet.subnet1.id
   route_table_id = aws_route_table.rtb.id
 }
+
+resource "aws_route_table_association" "rta-subnet2" {
+  subnet_id      = aws_subnet.subnet2.id
+  route_table_id = aws_route_table.rtb.id
+}
+
 
 resource "aws_security_group" "allow_ssh" {
   name        = "test_sg"
@@ -118,33 +132,90 @@ resource "aws_security_group" "allow_ssh" {
   }
 }
 
-# # INSTANCES #
-# resource "aws_instance" "nginx" {
-#   ami                    = data.aws_ami.aws-linux.id
-#   instance_type          = "t2.micro"
-#   key_name               = var.key_name
-#   vpc_security_group_ids = [aws_security_group.allow_ssh.id]
+resource "aws_security_group" "elb-sg" {
+  name   = "test-lb_sg"
+  vpc_id = aws_vpc.vpc.id
 
-#   connection {
-#     type        = "ssh"
-#     host        = self.public_ip
-#     user        = "ec2-user"
-#     private_key = file(var.private_key_path)
+  #Allow HTTP from anywhere
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
-#   }
+  #allow all outbound
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
 
-#   provisioner "remote-exec" {
-#     inline = [
-#       "sudo yum install nginx -y",
-#       "sudo service nginx start"
-#     ]
-#   }
-# }
+# INSTANCES #
+resource "aws_instance" "test1" {
+  ami                    = data.aws_ami.aws-linux.id
+  instance_type          = "t2.micro"
+  key_name               = var.key_name
+  vpc_security_group_ids = [aws_security_group.allow_ssh.id]
 
-##################################################################################
+  connection {
+    type        = "ssh"
+    host        = self.public_ip
+    user        = "ec2-user"
+    private_key = file(var.private_key_path)
+
+  }
+  provisioner "remote-exec" {
+    inline = [
+      "sudo yum install nginx -y",
+      "sudo service nginx start",
+    ]
+  }
+}
+
+resource "aws_instance" "test2" {
+  ami                    = data.aws_ami.aws-linux.id
+  instance_type          = "t2.micro"
+  key_name               = var.key_name
+  vpc_security_group_ids = [aws_security_group.allow_ssh.id]
+
+  connection {
+    type        = "ssh"
+    host        = self.public_ip
+    user        = "ec2-user"
+    private_key = file(var.private_key_path)
+
+  }
+  provisioner "remote-exec" {
+    inline = [
+      "sudo yum install nginx -y",
+      "sudo service nginx start",
+    ]
+  }
+}
+
+# LOAD BALANCER #
+resource "aws_elb" "lb" {
+  name = "test-lb"
+
+  subnets         = [aws_subnet.subnet1.id, aws_subnet.subnet2.id]
+  security_groups = [aws_security_group.elb-sg.id]
+  instances       = [aws_instance.test1.id, aws_instance.test2.id]
+
+  listener {
+    instance_port     = 80
+    instance_protocol = "http"
+    lb_port           = 80
+    lb_protocol       = "http"
+  }
+}
+
+#################################################################################
 # OUTPUT
-##################################################################################
+#################################################################################
 
-# output "aws_instance_public_dns" {
-#   value = aws_instance.nginx.public_dns
-# }
+output "aws_instance_public_dns" {
+  value = aws_elb.lb.dns_name
+}
