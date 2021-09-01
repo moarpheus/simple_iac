@@ -157,6 +157,7 @@ resource "aws_security_group" "elb-sg" {
 resource "aws_instance" "test1" {
   ami                    = data.aws_ami.aws-linux.id
   instance_type          = "t2.micro"
+  subnet_id              = aws_subnet.subnet1.id
   key_name               = var.key_name
   vpc_security_group_ids = [aws_security_group.allow_ssh.id]
 
@@ -178,6 +179,7 @@ resource "aws_instance" "test1" {
 resource "aws_instance" "test2" {
   ami                    = data.aws_ami.aws-linux.id
   instance_type          = "t2.micro"
+  subnet_id              = aws_subnet.subnet2.id
   key_name               = var.key_name
   vpc_security_group_ids = [aws_security_group.allow_ssh.id]
 
