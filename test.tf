@@ -85,6 +85,7 @@ resource "aws_vpc" "vpc" {
   cidr_block           = var.network_address_space
   enable_dns_hostnames = "true"
 
+  tags = merge(local.common_tags, { Name = "${var.environment_tag}-vpc" })
 }
 
 resource "aws_internet_gateway" "igw" {
@@ -129,7 +130,7 @@ resource "aws_route_table_association" "rta-subnet2" {
 }
 
 
-resource "aws_security_group" "allow_ssh" {
+resource "aws_security_group" "test-sg" {
   name        = "test_sg"
   description = "Allow ports for test"
   vpc_id      = aws_vpc.vpc.id
@@ -180,8 +181,9 @@ resource "aws_instance" "test1" {
   ami                    = data.aws_ami.aws-linux.id
   instance_type          = "t2.micro"
   subnet_id              = aws_subnet.subnet1.id
+  vpc_security_group_ids = [aws_security_group.test-sg.id]
   key_name               = var.key_name
-  vpc_security_group_ids = [aws_security_group.allow_ssh.id]
+  iam_instance_profile   = aws_iam_instance_profile.test_profile.name
 
   connection {
     type        = "ssh"
@@ -190,10 +192,27 @@ resource "aws_instance" "test1" {
     private_key = file(var.private_key_path)
 
   }
+
+  provisioner "file" {
+    content = <<EOF
+access_key =
+secret_key =
+security_token =
+use_https = True
+bucket_location = EU
+
+EOF
+    destination = "/home/ec2-user/.s3cfg"
+  }
+
   provisioner "remote-exec" {
     inline = [
       "sudo yum install nginx -y",
       "sudo service nginx start",
+      "sudo cp /home/ec2-user/.s3cfg /root/.s3cfg",
+      "sudo pip install s3cmd",
+      "s3cmd get s3://${aws_s3_bucket.web_bucket.id}/website/index.html ."
+      
     ]
   }
 }
@@ -202,8 +221,9 @@ resource "aws_instance" "test2" {
   ami                    = data.aws_ami.aws-linux.id
   instance_type          = "t2.micro"
   subnet_id              = aws_subnet.subnet2.id
+  vpc_security_group_ids = [aws_security_group.test-sg.id]
   key_name               = var.key_name
-  vpc_security_group_ids = [aws_security_group.allow_ssh.id]
+  iam_instance_profile   = aws_iam_instance_profile.test_profile.name
 
   connection {
     type        = "ssh"
@@ -212,13 +232,93 @@ resource "aws_instance" "test2" {
     private_key = file(var.private_key_path)
 
   }
+
+  provisioner "file" {
+    content = <<EOF
+access_key =
+secret_key =
+security_token =
+use_https = True
+bucket_location = US
+
+EOF
+    destination = "/home/ec2-user/.s3cfg"
+  }
+
   provisioner "remote-exec" {
     inline = [
       "sudo yum install nginx -y",
       "sudo service nginx start",
+      "sudo cp /home/ec2-user/.s3cfg /root/.s3cfg",
+      "sudo pip install s3cmd",
+      "s3cmd get s3://${aws_s3_bucket.web_bucket.id}/website/index.html ."
     ]
   }
 }
+
+# S3 Bucket config#
+resource "aws_iam_role" "allow_test_s3" {
+  name = "allow_test_s3"
+
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": ""
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_iam_instance_profile" "test_profile" {
+  name = "test_profile"
+  role = aws_iam_role.allow_test_s3.name
+}
+
+resource "aws_iam_role_policy" "allow_s3_all" {
+  name = "allow_s3_all"
+  role = aws_iam_role.allow_test_s3.name
+
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "s3:*"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+                "arn:aws:s3:::${local.s3_bucket_name}",
+                "arn:aws:s3:::${local.s3_bucket_name}/*"
+            ]
+    }
+  ]
+}
+EOF
+
+  }
+
+  resource "aws_s3_bucket" "web_bucket" {
+    bucket        = local.s3_bucket_name
+    acl           = "private"
+    force_destroy = true
+
+  }
+
+  resource "aws_s3_bucket_object" "website" {
+    bucket = aws_s3_bucket.web_bucket.bucket
+    key = "/website/index.html"
+    source = "./index.html"
+
+  }
 
 # LOAD BALANCER #
 resource "aws_elb" "lb" {
