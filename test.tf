@@ -74,6 +74,12 @@ data "aws_ami" "aws-linux" {
 # RESOURCES
 ##################################################################################
 
+#Random ID
+resource "random_integer" "rand" {
+  min = 10000
+  max = 99999
+}
+
 # NETWORKING #
 resource "aws_vpc" "vpc" {
   cidr_block           = var.network_address_space
