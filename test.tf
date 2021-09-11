@@ -51,3 +51,8 @@ resource "aws_subnet" "subnet" {
   availability_zone       = data.aws_availability_zones.available.names[count.index]
 
  }
+
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.vpc.id
+
+}
