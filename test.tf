@@ -128,3 +128,19 @@ resource "aws_security_group" "nginx-sg" {
   }
 
 }
+
+# LOAD BALANCER #
+resource "aws_elb" "web" {
+  name = "nginx-elb"
+
+  subnets         = aws_subnet.subnet[*].id
+  security_groups = [aws_security_group.elb-sg.id]
+
+  listener {
+    instance_port     = 80
+    instance_protocol = "http"
+    lb_port           = 80
+    lb_protocol       = "http"
+  }
+
+}
