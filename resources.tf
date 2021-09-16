@@ -38,6 +38,12 @@ data "aws_ami" "aws-linux" {
 # RESOURCES
 ##################################################################################
 
+#Random ID
+resource "random_integer" "rand" {
+  min = 10000
+  max = 99999
+}
+
 # NETWORKING #
 resource "aws_vpc" "vpc" {
   cidr_block = var.network_address_space[terraform.workspace]
@@ -169,18 +175,118 @@ access_key =
 secret_key =
 security_token =
 use_https = True
-bucket_location = US
+bucket_location = EU
 
 EOF
     destination = "/home/ec2-user/.s3cfg"
   }
 
+  provisioner "file" {
+    content = <<EOF
+/var/log/nginx/*log {
+    daily
+    rotate 10
+    missingok
+    compress
+    sharedscripts
+    postrotate
+    endscript
+    lastaction
+        INSTANCE_ID=`curl --silent http://169.254.169.254/latest/meta-data/instance-id`
+        sudo /usr/local/bin/s3cmd sync --config=/home/ec2-user/.s3cfg /var/log/nginx/ s3://${aws_s3_bucket.web_bucket.id}/nginx/$INSTANCE_ID/
+    endscript
+}
+
+EOF
+
+    destination = "/home/ec2-user/nginx"
+  }
 
   provisioner "remote-exec" {
     inline = [
       "sudo yum install nginx -y",
-      "sudo service nginx start"
+      "sudo service nginx start",
+      "sudo cp /home/ec2-user/.s3cfg /root/.s3cfg",
+      "sudo cp /home/ec2-user/nginx /etc/logrotate.d/nginx",
+      "sudo pip install s3cmd",
+      "s3cmd get s3://${aws_s3_bucket.web_bucket.id}/website/index.html .",
+      "s3cmd get s3://${aws_s3_bucket.web_bucket.id}/website/test.png .",
+      "sudo rm /usr/share/nginx/html/index.html",
+      "sudo cp /home/ec2-user/index.html /usr/share/nginx/html/index.html",
+      "sudo cp /home/ec2-user/test.png /usr/share/nginx/html/test.png",
+      "sudo logrotate -f /etc/logrotate.conf"
+
     ]
   }
 
+}
+
+# S3 Bucket config#
+resource "aws_iam_role" "allow_nginx_s3" {
+  name = "${local.env_name}_allow_nginx_s3"
+
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": ""
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_iam_instance_profile" "nginx_profile" {
+  name = "${local.env_name}_nginx_profile"
+  role = aws_iam_role.allow_nginx_s3.name
+}
+
+resource "aws_iam_role_policy" "allow_s3_all" {
+  name = "${local.env_name}_allow_s3_all"
+  role = aws_iam_role.allow_nginx_s3.name
+
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "s3:*"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+                "arn:aws:s3:::${local.s3_bucket_name}",
+                "arn:aws:s3:::${local.s3_bucket_name}/*"
+            ]
+    }
+  ]
+}
+EOF
+
+}
+
+resource "aws_s3_bucket" "web_bucket" {
+  bucket        = local.s3_bucket_name
+  acl           = "private"
+  force_destroy = true
+
+}
+
+resource "aws_s3_bucket_object" "website" {
+  bucket = aws_s3_bucket.web_bucket.bucket
+  key    = "/website/index.html"
+  source = "./index.html"
+
+}
+
+resource "aws_s3_bucket_object" "graphic" {
+  bucket = aws_s3_bucket.web_bucket.bucket
+  key    = "/website/test.png"
+  source = "./test.png"
 }

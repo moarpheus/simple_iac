@@ -7,7 +7,7 @@ variable "aws_secret_key" {}
 variable "private_key_path" {}
 variable "key_name" {}
 variable "region" {
-  default = "eu-west-2"
+  default = "us-east-1"
 }
 variable network_address_space {
   type = map(string)
@@ -24,14 +24,13 @@ variable "instance_count" {
 
 variable "bucket_name_prefix" {}
 
-variable "dns_zone_name" {}
-variable "dns_resource_group" {}
-
 ##################################################################################
 # LOCALS
 ##################################################################################
 
 locals {
   env_name = lower(terraform.workspace)
+
+  s3_bucket_name = "${var.bucket_name_prefix}-${local.env_name}-${random_integer.rand.result}"
 
 }
